@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="ru" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pac-Tetris Arcade</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'VT323', monospace;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        .font-arcade {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        /* Neon Pac-Man Arcade Frame Glow */
+        .arcade-glow {
+            box-shadow: 0 0 25px rgba(25, 118, 210, 0.6),
+                        inset 0 0 15px rgba(33, 150, 243, 0.4);
+        }
+
+        .yellow-glow {
+            text-shadow: 0 0 8px rgba(255, 235, 59, 0.8);
+        }
+
+        .blue-border-glow {
+            box-shadow: 0 0 10px #1e40af, inset 0 0 10px #1e40af;
+        }
+
+        /* CRT Screen Effect */
+        .crt-overlay {
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+        }
+
+        /* Animated ghost float */
+        @keyframes ghost-bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+        .animate-ghost {
+            animation: ghost-bounce 1.2s infinite ease-in-out;
+        }
+
+        /* Flash background effect for power pellet */
+        @keyframes flash-bg {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 0.8; }
+        }
+        .frightened-flash {
+            animation: flash-bg 0.5s infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-black flex flex-col items-center justify-between p-2 sm:p-4 overflow-x-hidden text-yellow-400">
+
+    <!-- Top Arcade Header -->
+    <header class="w-full max-w-4xl flex items-center justify-between border-b-4 border-blue-700 pb-2 mb-2 px-2">
+        <div class="flex items-center gap-3">
+            <!-- Animated Pac-Man SVG Icon -->
+            <div class="w-10 h-10 relative">
+                <svg viewBox="0 0 100 100" class="w-full h-full text-yellow-400 fill-current animate-pulse">
+                    <path d="M 50,50 L 95,20 A 45,45 0 1,0 95,80 Z" />
+                    <circle cx="55" cy="25" r="6" fill="#000"/>
+                </svg>
+            </div>
+            <div>
+                <h1 class="font-arcade text-lg sm:text-2xl text-yellow-400 tracking-wider yellow-glow">PAC-TETRIS</h1>
+                <p class="text-xs sm:text-sm text-blue-400 tracking-widest uppercase">Arcade Edition v2.0</p>
+            </div>
+        </div>
+
+        <!-- Mute/Sound & Info controls -->
+        <div class="flex items-center gap-2">
+            <button id="soundToggleBtn" class="px-3 py-1 bg-blue-900 border-2 border-blue-400 text-yellow-300 rounded hover:bg-blue-800 text-sm font-arcade transition">
+                🔊 ЗВУК
+            </button>
+            <button id="helpBtn" class="px-3 py-1 bg-blue-900 border-2 border-blue-400 text-yellow-300 rounded hover:bg-blue-800 text-sm font-arcade transition">
+                ?
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Game Container -->
+    <main class="w-full max-w-4xl flex-1 flex flex-col md:flex-row items-center md:items-start justify-center gap-4 relative">
+        
+        <!-- CRT Scanline layer -->
+        <div class="absolute inset-0 crt-overlay z-10 pointer-events-none"></div>
+
+        <!-- Left Sidebar: Hold Piece & Level Info -->
+        <div class="w-full md:w-48 flex md:flex-col justify-between md:justify-start gap-3 order-2 md:order-1">
+            <!-- HOLD BOX -->
+            <div class="flex-1 bg-black border-4 border-blue-600 rounded-lg p-2 flex flex-col items-center blue-border-glow">
+                <h2 class="font-arcade text-xs text-blue-400 mb-1">ЗАПАС (HOLD)</h2>
+                <div class="w-24 h-24 bg-slate-950 border border-blue-900 rounded flex items-center justify-center relative">
+                    <canvas id="holdCanvas" width="96" height="96"></canvas>
+                </div>
+                <p class="text-xs text-gray-400 mt-1">[C / SHIFT]</p>
+            </div>
+
+            <!-- STATS BOX -->
+            <div class="flex-1 bg-black border-4 border-blue-600 rounded-lg p-3 flex flex-col justify-around blue-border-glow">
+                <div>
+                    <span class="block text-xs text-blue-400 font-arcade">РЕКОРД</span>
+                    <span id="highScoreText" class="text-2xl text-yellow-300 font-bold tracking-wider">000000</span>
+                </div>
+                <div class="mt-2">
+                    <span class="block text-xs text-blue-400 font-arcade">УРОВЕНЬ</span>
+                    <span id="levelText" class="text-3xl text-red-500 font-bold tracking-wider">01</span>
+                </div>
+                <div class="mt-2">
+                    <span class="block text-xs text-blue-400 font-arcade">ЛИНИИ</span>
+                    <span id="linesText" class="text-2xl text-green-400 font-bold tracking-wider">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center: Game Board Canvas -->
+        <div class="relative order-1 md:order-2 flex flex-col items-center">
+            <!-- Frightened mode status banner -->
+            <div id="frightenedBanner" class="hidden absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-blue-600 text-white font-arcade text-xs px-3 py-1 rounded border-2 border-white animate-pulse shadow-lg">
+                ⚡ ФРАЙТ-РЕЖИМ x2 ⚡
+            </div>
+
+            <!-- Board Frame -->
+            <div class="relative bg-black border-8 border-blue-700 rounded-xl p-1 arcade-glow">
+                <canvas id="tetrisCanvas" width="300" height="600" class="block bg-black border border-blue-900 rounded"></canvas>
+
+                <!-- Overlay Screens (Start / Pause / Game Over) -->
+                <div id="overlayScreen" class="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-4 z-30 text-center rounded-lg">
+                    <div id="overlayContent" class="flex flex-col items-center">
+                        <div class="flex gap-2 mb-4 animate-ghost">
+                            <!-- Ghost Icons -->
+                            <span class="text-3xl">🔴</span>
+                            <span class="text-3xl">🌸</span>
+                            <span class="text-3xl">🩵</span>
+                            <span class="text-3xl">🟠</span>
+                        </div>
+                        <h2 id="overlayTitle" class="font-arcade text-2xl text-yellow-400 mb-2 yellow-glow">PAC-TETRIS</h2>
+                        <p id="overlayMessage" class="text-lg text-blue-300 mb-6 max-w-xs">Собирайте линии, ловите Точки Силы и поедайте призраков!</p>
+                        <button id="startBtn" class="font-arcade px-6 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-bold rounded-lg text-sm transition transform hover:scale-105 border-2 border-white shadow-lg">
+                            НАЧАТЬ ИГРУ
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Sidebar: Next Piece & Score -->
+        <div class="w-full md:w-48 flex md:flex-col justify-between md:justify-start gap-3 order-3">
+            <!-- NEXT PIECE BOX -->
+            <div class="flex-1 bg-black border-4 border-blue-600 rounded-lg p-2 flex flex-col items-center blue-border-glow">
+                <h2 class="font-arcade text-xs text-blue-400 mb-1">СЛЕДУЮЩИЙ</h2>
+                <div class="w-24 h-24 bg-slate-950 border border-blue-900 rounded flex items-center justify-center">
+                    <canvas id="nextCanvas" width="96" height="96"></canvas>
+                </div>
+            </div>
+
+            <!-- CURRENT SCORE BOX -->
+            <div class="flex-1 bg-black border-4 border-blue-600 rounded-lg p-3 flex flex-col justify-center blue-border-glow">
+                <span class="block text-xs text-blue-400 font-arcade">СЧЕТ</span>
+                <span id="scoreText" class="text-3xl text-yellow-400 font-bold tracking-wider yellow-glow">000000</span>
+                
+                <div class="mt-3 pt-2 border-t border-blue-900">
+                    <span class="block text-xs text-pink-400 font-arcade">БОНУС ТОЧЕК</span>
+                    <span id="pelletCountText" class="text-xl text-pink-300 font-bold">🟡 x0</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Touch Screen Controls for Mobile & Tablet -->
+    <div class="w-full max-w-2xl mt-3 flex flex-col gap-2 md:hidden">
+        <div class="flex justify-between gap-2">
+            <button id="btnHold" class="flex-1 py-3 bg-blue-950 border-2 border-blue-500 rounded text-yellow-300 font-arcade text-xs active:bg-blue-800">
+                HOLD
+            </button>
+            <button id="btnRotate" class="flex-2 py-3 px-6 bg-yellow-500 border-2 border-yellow-200 rounded text-black font-arcade text-sm font-bold active:bg-yellow-400">
+                ↻ ПОВОРOТ
+            </button>
+            <button id="btnHardDrop" class="flex-1 py-3 bg-red-800 border-2 border-red-500 rounded text-white font-arcade text-xs active:bg-red-700">
+                DROP ⏬
+            </button>
+        </div>
+        <div class="grid grid-cols-3 gap-2">
+            <button id="btnLeft" class="py-4 bg-blue-900 border-2 border-blue-400 rounded text-yellow-300 font-arcade text-lg active:bg-blue-700">
+                ◀
+            </button>
+            <button id="btnSoftDrop" class="py-4 bg-blue-900 border-2 border-blue-400 rounded text-yellow-300 font-arcade text-lg active:bg-blue-700">
+                ▼
+            </button>
+            <button id="btnRight" class="py-4 bg-blue-900 border-2 border-blue-400 rounded text-yellow-300 font-arcade text-lg active:bg-blue-700">
+                ▶
+            </button>
+        </div>
+    </div>
+
+    <!-- Help / Instructions Modal -->
+    <div id="helpModal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border-4 border-yellow-400 rounded-xl max-w-md w-full p-6 text-yellow-300 relative">
+            <button id="closeHelpBtn" class="absolute top-2 right-3 text-2xl font-bold hover:text-white">&times;</button>
+            <h3 class="font-arcade text-lg text-yellow-400 mb-4 text-center">КАК ИГРАТЬ</h3>
+            <ul class="space-y-2 text-sm text-slate-200 mb-4">
+                <li><strong class="text-yellow-400">⬅ / ➡️ / A / D:</strong> Перемещение фигур</li>
+                <li><strong class="text-yellow-400">⬆ / W / X:</strong> Поворот фигуры</li>
+                <li><strong class="text-yellow-400">⬇ / S:</strong> Ускоренное падение</li>
+                <li><strong class="text-yellow-400">ПРОБЕЛ (Space):</strong> Мгновенный сброс</li>
+                <li><strong class="text-yellow-400">C / SHIFT:</strong> Сохранить фигуру (Hold)</li>
+                <li><strong class="text-yellow-400">P / ESC:</strong> Пауза</li>
+            </ul>
+            <div class="border-t border-slate-700 pt-3 text-xs text-blue-300 space-y-1">
+                <p>🟡 <strong class="text-yellow-400">Точки Pac-Man:</strong> В некоторых блоках появляются точки! Очищайте эти линии для бонусных очков.</p>
+                <p>⚡ <strong class="text-cyan-300">Точка Силы (Power Pellet):</strong> Включает Фрайт-режим, удваивая все очки за очищенные линии!</p>
+                <p>👻 <strong class="text-pink-400">Призраки:</strong> Каждая фигура оформлена в стиле культовых призраков (Blinky, Pinky, Inky, Clyde)!</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* ===================================================================
+           1. WEB AUDIO SYNTHESIZER FOR PAC-MAN ARCADE SOUND EFFECTS
+           =================================================================== */
+        class PacAudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                        this.ctx = new AudioContext();
+                    }
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playWaka() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+
+                    const now = this.ctx.currentTime;
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(700, now + 0.06);
+
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.06);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now);
+                    osc.stop(now + 0.06);
+                } catch(e){}
+            }
+
+            playRotate() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sine';
+
+                    const now = this.ctx.currentTime;
+                    osc.frequency.setValueAtTime(400, now);
+                    osc.frequency.setValueAtTime(600, now + 0.03);
+
+                    gain.gain.setValueAtTime(0.1, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.07);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now);
+                    osc.stop(now + 0.07);
+                } catch(e){}
+            }
+
+            playDrop() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'square';
+
+                    const now = this.ctx.currentTime;
+                    osc.frequency.setValueAtTime(180, now);
+                    osc.frequency.exponentialRampToValueAtTime(60, now + 0.1);
+
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.1);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                } catch(e){}
+            }
+
+            playLineClear() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const notes = [261.63, 329.63, 392.00, 523.25, 659.25];
+                    notes.forEach((freq, idx) => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'square';
+                        osc.frequency.value = freq;
+
+                        const now = this.ctx.currentTime + (idx * 0.05);
+                        gain.gain.setValueAtTime(0.12, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+
+                        osc.start(now);
+                        osc.stop(now + 0.08);
+                    });
+                } catch(e){}
+            }
+
+            playPowerPelletSound() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'sawtooth';
+                    
+                    osc.frequency.setValueAtTime(200, now);
+                    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.3);
+
+                    gain.gain.setValueAtTime(0.25, now);
+                    gain.gain.linearRampToValueAtTime(0.01, now + 0.35);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(now);
+                    osc.stop(now + 0.35);
+                } catch(e){}
+            }
+
+            playGameOver() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    const freqs = [500, 460, 420, 380, 340, 300, 260, 220, 180, 140];
+                    freqs.forEach((freq, i) => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.value = freq;
+
+                        const now = this.ctx.currentTime + (i * 0.08);
+                        gain.gain.setValueAtTime(0.15, now);
+                        gain.gain.linearRampToValueAtTime(0.01, now + 0.07);
+
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+
+                        osc.start(now);
+                        osc.stop(now + 0.07);
+                    });
+                } catch(e){}
+            }
+
+            playStartMelody() {
+                if (this.muted || !this.ctx) return;
+                try {
+                    // Pac-Man Intro theme pitch approximations
+                    const melody = [
+                        {f: 493.88, d: 0.12}, {f: 987.77, d: 0.12}, {f: 739.99, d: 0.12}, {f: 622.25, d: 0.12},
+                        {f: 987.77, d: 0.08}, {f: 739.99, d: 0.08}, {f: 622.25, d: 0.16},
+                        {f: 523.25, d: 0.12}, {f: 1046.50, d: 0.12}, {f: 783.99, d: 0.12}, {f: 659.25, d: 0.12},
+                        {f: 1046.50, d: 0.08}, {f: 783.99, d: 0.08}, {f: 659.25, d: 0.16}
+                    ];
+                    let time = this.ctx.currentTime;
+                    melody.forEach(note => {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        osc.type = 'square';
+                        osc.frequency.value = note.f;
+
+                        gain.gain.setValueAtTime(0.1, time);
+                        gain.gain.linearRampToValueAtTime(0.01, time + note.d);
+
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+
+                        osc.start(time);
+                        osc.stop(time + note.d);
+                        time += note.d;
+                    });
+                } catch(e){}
+            }
+        }
+
+        const audio = new PacAudioEngine();
+
+        /* ===================================================================
+           2. TETRIS ENGINE CONSTANTS & PAC-MAN THEMED PIECES
+           =================================================================== */
+        const COLS = 10;
+        const ROWS = 20;
+        const BLOCK_SIZE = 30; // 300x600 canvas resolution
+
+        // Tetromino shapes & Pac-Man themes
+        // Color mapping:
+        // O: Pac-Man Yellow
+        // I: Blinky Red
+        // T: Pinky Pink
+        // J: Inky Cyan
+        // L: Clyde Orange
+        // S: Sue Purple
+        // Z: Funky Green
+        const PIECES = [
+            {
+                name: 'O',
+                shape: [
+                    [1, 1],
+                    [1, 1]
+                ],
+                color: '#FFD700', // Pac-Yellow
+                eyeColor: '#000',
+                ghostType: 'PACMAN'
+            },
+            {
+                name: 'I',
+                shape: [
+                    [0, 0, 0, 0],
+                    [1, 1, 1, 1],
+                    [0, 0, 0, 0],
+                    [0, 0, 0, 0]
+                ],
+                color: '#FF0000', // Blinky Red
+                eyeColor: '#FFF',
+                ghostType: 'BLINKY'
+            },
+            {
+                name: 'T',
+                shape: [
+                    [0, 1, 0],
+                    [1, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: '#FFB8FF', // Pinky Pink
+                eyeColor: '#FFF',
+                ghostType: 'PINKY'
+            },
+            {
+                name: 'J',
+                shape: [
+                    [1, 0, 0],
+                    [1, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: '#00FFFF', // Inky Cyan
+                eyeColor: '#FFF',
+                ghostType: 'INKY'
+            },
+            {
+                name: 'L',
+                shape: [
+                    [0, 0, 1],
+                    [1, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: '#FFB852', // Clyde Orange
+                eyeColor: '#FFF',
+                ghostType: 'CLYDE'
+            },
+            {
+                name: 'S',
+                shape: [
+                    [0, 1, 1],
+                    [1, 1, 0],
+                    [0, 0, 0]
+                ],
+                color: '#A020F0', // Purple
+                eyeColor: '#FFF',
+                ghostType: 'PURPLE'
+            },
+            {
+                name: 'Z',
+                shape: [
+                    [1, 1, 0],
+                    [0, 1, 1],
+                    [0, 0, 0]
+                ],
+                color: '#00FF00', // Neon Green
+                eyeColor: '#FFF',
+                ghostType: 'GREEN'
+            }
+        ];
+
+        /* ===================================================================
+           3. GAME STATE & DOM ELEMENTS
+           =================================================================== */
+        const canvas = document.getElementById('tetrisCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const holdCanvas = document.getElementById('holdCanvas');
+        const holdCtx = holdCanvas.getContext('2d');
+
+        const nextCanvas = document.getElementById('nextCanvas');
+        const nextCtx = nextCanvas.getContext('2d');
+
+        // UI Text elements
+        const scoreText = document.getElementById('scoreText');
+        const highScoreText = document.getElementById('highScoreText');
+        const levelText = document.getElementById('levelText');
+        const linesText = document.getElementById('linesText');
+        const pelletCountText = document.getElementById('pelletCountText');
+        const frightenedBanner = document.getElementById('frightenedBanner');
+
+        // Overlay & Buttons
+        const overlayScreen = document.getElementById('overlayScreen');
+        const overlayTitle = document.getElementById('overlayTitle');
+        const overlayMessage = document.getElementById('overlayMessage');
+        const startBtn = document.getElementById('startBtn');
+        const soundToggleBtn = document.getElementById('soundToggleBtn');
+        const helpBtn = document.getElementById('helpBtn');
+        const helpModal = document.getElementById('helpModal');
+        const closeHelpBtn = document.getElementById('closeHelpBtn');
+
+        // Mobile touch control buttons
+        const btnLeft = document.getElementById('btnLeft');
+        const btnRight = document.getElementById('btnRight');
+        const btnSoftDrop = document.getElementById('btnSoftDrop');
+        const btnHardDrop = document.getElementById('btnHardDrop');
+        const btnRotate = document.getElementById('btnRotate');
+        const btnHold = document.getElementById('btnHold');
+
+        // Game state variables
+        let grid = [];
+        let currentPiece = null;
+        let currentPos = { x: 0, y: 0 };
+        let holdPiece = null;
+        let canHold = true;
+        let nextQueue = [];
+
+        let score = 0;
+        let highScore = parseInt(localStorage.getItem('pac_tetris_highscore') || '0', 10);
+        let level = 1;
+        let linesCleared = 0;
+        let totalPelletsEaten = 0;
+
+        let isGameOver = false;
+        let isPaused = false;
+        let gameStarted = false;
+
+        let lastTime = 0;
+        let dropCounter = 0;
+        let dropInterval = 1000; // ms per drop
+
+        // Power Pellet Frightened Mode State
+        let frightenedTimer = 0; // remaining frames/ms
+        let isFrightened = false;
+
+        /* ===================================================================
+           4. GRAPHICS & CANVAS DRAWING FUNCTIONS
+           =================================================================== */
+
+        // Create empty grid
+        function createGrid() {
+            const matrix = [];
+            for (let r = 0; r < ROWS; r++) {
+                matrix[r] = [];
+                for (let c = 0; c < COLS; c++) {
+                    matrix[r][c] = null; // null or { color, hasPellet, isPowerPellet, eyeColor }
+                }
+            }
+            return matrix;
+        }
+
+        // Draw a single Pac-Block cell on board canvas
+        function drawCell(context, x, y, size, blockData, opacity = 1.0) {
+            if (!blockData) return;
+
+            context.save();
+            context.globalAlpha = opacity;
+
+            const px = x * size;
+            const py = y * size;
+
+            let color = blockData.color;
+            let eyeColor = blockData.eyeColor || '#FFF';
+
+            // Override color if in Frightened Ghost mode!
+            if (isFrightened && blockData.ghostType !== 'PACMAN') {
+                color = '#0000FF'; // Frightened Blue Ghost
+                eyeColor = '#FFB852'; // Frightened orange mouth/eyes
+            }
+
+            // Outer cell block background
+            context.fillStyle = color;
+            context.beginPath();
+            context.roundRect(px + 1, py + 1, size - 2, size - 2, 6);
+            context.fill();
+
+            // Inner retro grid frame effect
+            context.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            context.lineWidth = 1.5;
+            context.stroke();
+
+            // Pac-Man styled details inside cell
+            if (blockData.ghostType === 'PACMAN') {
+                // Draw Pac-Man mouth arc
+                context.fillStyle = '#000000';
+                context.beginPath();
+                context.arc(px + size / 2, py + size / 2, size / 3, 0.2 * Math.PI, 1.8 * Math.PI);
+                context.lineTo(px + size / 2, py + size / 2);
+                context.fill();
+            } else {
+                // Draw Ghost eyes inside block
+                context.fillStyle = eyeColor;
+                context.beginPath();
+                context.arc(px + size * 0.35, py + size * 0.4, size * 0.15, 0, Math.PI * 2);
+                context.arc(px + size * 0.65, py + size * 0.4, size * 0.15, 0, Math.PI * 2);
+                context.fill();
+
+                // Blue pupils
+                context.fillStyle = isFrightened ? '#FF0000' : '#0000FF';
+                context.beginPath();
+                context.arc(px + size * 0.35, py + size * 0.4, size * 0.07, 0, Math.PI * 2);
+                context.arc(px + size * 0.65, py + size * 0.4, size * 0.07, 0, Math.PI * 2);
+                context.fill();
+            }
+
+            // Draw Pac-Pellet or Power Pellet inside block if present
+            if (blockData.hasPellet) {
+                context.fillStyle = '#FFB8FF'; // Pinkish-yellow dot
+                context.beginPath();
+                context.arc(px + size / 2, py + size / 2, size * 0.18, 0, Math.PI * 2);
+                context.fill();
+            } else if (blockData.isPowerPellet) {
+                // Pulsing Power Pellet
+                const pulse = (Math.sin(Date.now() / 150) + 1) / 2;
+                context.fillStyle = '#FFFFFF';
+                context.beginPath();
+                context.arc(px + size / 2, py + size / 2, size * (0.22 + pulse * 0.08), 0, Math.PI * 2);
+                context.fill();
+            }
+
+            context.restore();
+        }
+
+        // Render main grid board
+        function drawBoard() {
+            // Clear main background
+            ctx.fillStyle = '#050510';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background grid lines (Pac-Man blue neon layout)
+            ctx.strokeStyle = '#1e3a8a';
+            ctx.lineWidth = 0.5;
+            for (let r = 0; r <= ROWS; r++) {
+                ctx.beginPath();
+                ctx.moveTo(0, r * BLOCK_SIZE);
+                ctx.lineTo(COLS * BLOCK_SIZE, r * BLOCK_SIZE);
+                ctx.stroke();
+            }
+            for (let c = 0; c <= COLS; c++) {
+                ctx.beginPath();
+                ctx.moveTo(c * BLOCK_SIZE, 0);
+                ctx.lineTo(c * BLOCK_SIZE, ROWS * BLOCK_SIZE);
+                ctx.stroke();
+            }
+
+            // Draw placed blocks on grid
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (grid[r][c]) {
+                        drawCell(ctx, c, r, BLOCK_SIZE, grid[r][c]);
+                    }
+                }
+            }
+
+            // Draw ghost drop shadow projection
+            if (currentPiece && !isGameOver) {
+                const ghostY = getGhostPosition();
+                for (let r = 0; r < currentPiece.shape.length; r++) {
+                    for (let c = 0; c < currentPiece.shape[r].length; c++) {
+                        if (currentPiece.shape[r][c]) {
+                            drawCell(ctx, currentPos.x + c, ghostY + r, BLOCK_SIZE, {
+                                ...currentPiece,
+                                color: 'rgba(255, 255, 255, 0.15)'
+                            }, 0.3);
+                        }
+                    }
+                }
+            }
+
+            // Draw active falling piece
+            if (currentPiece && !isGameOver) {
+                for (let r = 0; r < currentPiece.shape.length; r++) {
+                    for (let c = 0; c < currentPiece.shape[r].length; c++) {
+                        if (currentPiece.shape[r][c]) {
+                            drawCell(ctx, currentPos.x + c, currentPos.y + r, BLOCK_SIZE, currentPiece);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Render Preview Box (Hold & Next)
+        function drawPreview(context, piece) {
+            context.fillStyle = '#020617';
+            context.fillRect(0, 0, context.canvas.width, context.canvas.height);
+
+            if (!piece) return;
+
+            const shape = piece.shape;
+            const size = 20;
+            const offsetX = Math.floor((context.canvas.width - shape[0].length * size) / 2 / size);
+            const offsetY = Math.floor((context.canvas.height - shape.length * size) / 2 / size);
+
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        drawCell(context, offsetX + c, offsetY + r, size, piece);
+                    }
+                }
+            }
+        }
+
+        /* ===================================================================
+           5. GAME MECHANICS & COLLISION DETECTION
+           =================================================================== */
+
+        // Spawn a random tetromino with chance of Pac-Dots/Power-Pellets
+        function getRandomPiece() {
+            const randomIndex = Math.floor(Math.random() * PIECES.length);
+            const template = PIECES[randomIndex];
+
+            // Deep clone piece template
+            const piece = {
+                name: template.name,
+                shape: template.shape.map(row => [...row]),
+                color: template.color,
+                eyeColor: template.eyeColor,
+                ghostType: template.ghostType,
+                hasPellet: Math.random() < 0.25, // 25% chance of dot
+                isPowerPellet: Math.random() < 0.08 // 8% chance of Power Pellet!
+            };
+
+            return piece;
+        }
+
+        function refillNextQueue() {
+            while (nextQueue.length < 3) {
+                nextQueue.push(getRandomPiece());
+            }
+        }
+
+        // Check matrix collision
+        function collide(board, piece, pos) {
+            const shape = piece.shape;
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        const newX = pos.x + c;
+                        const newY = pos.y + r;
+
+                        if (newX < 0 || newX >= COLS || newY >= ROWS) {
+                            return true;
+                        }
+                        if (newY >= 0 && board[newY][newX]) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        // Calculate ghost drop position
+        function getGhostPosition() {
+            let ghostY = currentPos.y;
+            while (!collide(grid, currentPiece, { x: currentPos.x, y: ghostY + 1 })) {
+                ghostY++;
+            }
+            return ghostY;
+        }
+
+        // Rotate piece matrix clockwise
+        function rotateMatrix(matrix) {
+            const N = matrix.length;
+            const result = matrix.map((row, i) =>
+                row.map((val, j) => matrix[N - 1 - j][i])
+            );
+            return result;
+        }
+
+        // Rotate current active piece with wall-kick check
+        function playerRotate() {
+            if (!currentPiece || isGameOver || isPaused) return;
+
+            const originalShape = currentPiece.shape;
+            const rotated = rotateMatrix(currentPiece.shape);
+            currentPiece.shape = rotated;
+
+            // Wall kick tests
+            let offset = 1;
+            while (collide(grid, currentPiece, currentPos)) {
+                currentPos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (offset > currentPiece.shape[0].length) {
+                    currentPiece.shape = originalShape; // revert
+                    return;
+                }
+            }
+
+            audio.playRotate();
+            drawBoard();
+        }
+
+        // Move piece left/right
+        function movePlayer(dir) {
+            if (!currentPiece || isGameOver || isPaused) return;
+
+            currentPos.x += dir;
+            if (collide(grid, currentPiece, currentPos)) {
+                currentPos.x -= dir;
+            } else {
+                audio.playWaka();
+            }
+            drawBoard();
+        }
+
+        // Soft Drop
+        function softDrop() {
+            if (!currentPiece || isGameOver || isPaused) return;
+
+            currentPos.y++;
+            if (collide(grid, currentPiece, currentPos)) {
+                currentPos.y--;
+                lockPiece();
+            } else {
+                score += 1; // Soft drop bonus points
+                updateUI();
+            }
+            dropCounter = 0;
+            drawBoard();
+        }
+
+        // Hard Drop
+        function hardDrop() {
+            if (!currentPiece || isGameOver || isPaused) return;
+
+            while (!collide(grid, currentPiece, { x: currentPos.x, y: currentPos.y + 1 })) {
+                currentPos.y++;
+                score += 2; // Hard drop bonus points
+            }
+            audio.playDrop();
+            lockPiece();
+            dropCounter = 0;
+            drawBoard();
+        }
+
+        // Hold Piece action
+        function holdCurrentPiece() {
+            if (!canHold || isGameOver || isPaused) return;
+
+            if (!holdPiece) {
+                holdPiece = currentPiece;
+                spawnNextPiece();
+            } else {
+                const temp = currentPiece;
+                currentPiece = holdPiece;
+                holdPiece = temp;
+                currentPos = { x: Math.floor(COLS / 2) - Math.ceil(currentPiece.shape[0].length / 2), y: 0 };
+            }
+
+            canHold = false;
+            drawPreview(holdCtx, holdPiece);
+            drawBoard();
+        }
+
+        /* ===================================================================
+           6. LINE CLEARS, PAC-PELLET BONUSES & LEVELING
+           =================================================================== */
+
+        // Lock piece into matrix & scan for completed lines
+        function lockPiece() {
+            const shape = currentPiece.shape;
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        const boardY = currentPos.y + r;
+                        const boardX = currentPos.x + c;
+
+                        // Check Game Over condition
+                        if (boardY < 0) {
+                            gameOver();
+                            return;
+                        }
+
+                        grid[boardY][boardX] = {
+                            color: currentPiece.color,
+                            eyeColor: currentPiece.eyeColor,
+                            ghostType: currentPiece.ghostType,
+                            hasPellet: currentPiece.hasPellet,
+                            isPowerPellet: currentPiece.isPowerPellet
+                        };
+                    }
+                }
+            }
+
+            clearLines();
+            spawnNextPiece();
+            canHold = true;
+        }
+
+        // Clear filled lines & process special Pac-Man mechanics
+        function clearLines() {
+            let lines = 0;
+            let pelletsInClearedLines = 0;
+            let powerPelletTriggered = false;
+
+            for (let r = ROWS - 1; r >= 0; r--) {
+                const isFull = grid[r].every(cell => cell !== null);
+
+                if (isFull) {
+                    lines++;
+
+                    // Scan cleared row for pellets & power pellets
+                    for (let c = 0; c < COLS; c++) {
+                        if (grid[r][c]) {
+                            if (grid[r][c].hasPellet) pelletsInClearedLines++;
+                            if (grid[r][c].isPowerPellet) powerPelletTriggered = true;
+                        }
+                    }
+
+                    // Remove row & insert empty row at top
+                    grid.splice(r, 1);
+                    grid.unshift(new Array(COLS).fill(null));
+                    r++; // Re-check same row index after shift
+                }
+            }
+
+            if (lines > 0) {
+                // Calculate classic Tetris line clear score
+                const lineScores = [0, 100, 300, 500, 800];
+                let roundScore = lineScores[lines] * level;
+
+                // Apply Frightened mode multiplier
+                if (isFrightened) {
+                    roundScore *= 2;
+                }
+
+                // Add pellet eating bonus
+                if (pelletsInClearedLines > 0) {
+                    totalPelletsEaten += pelletsInClearedLines;
+                    roundScore += pelletsInClearedLines * 50 * level;
+                }
+
+                score += roundScore;
+                linesCleared += lines;
+
+                // Level up every 10 lines
+                const newLevel = Math.floor(linesCleared / 10) + 1;
+                if (newLevel !== level) {
+                    level = newLevel;
+                    // Speed up drop interval
+                    dropInterval = Math.max(100, 1000 - (level - 1) * 85);
+                }
+
+                // Trigger Power Pellet / Frightened Ghost Mode
+                if (powerPelletTriggered) {
+                    triggerFrightenedMode();
+                } else {
+                    audio.playLineClear();
+                }
+
+                updateUI();
+            }
+        }
+
+        // Power Pellet Ghost Frightened Mode
+        function triggerFrightenedMode() {
+            isFrightened = true;
+            frightenedTimer = 300; // ~5 seconds at 60fps
+            frightenedBanner.classList.remove('hidden');
+            audio.playPowerPelletSound();
+        }
+
+        // Spawn next piece from queue
+        function spawnNextPiece() {
+            refillNextQueue();
+            currentPiece = nextQueue.shift();
+            currentPos = {
+                x: Math.floor(COLS / 2) - Math.ceil(currentPiece.shape[0].length / 2),
+                y: 0
+            };
+
+            drawPreview(nextCtx, nextQueue[0]);
+
+            // Immediately check collision on spawn -> Game Over
+            if (collide(grid, currentPiece, currentPos)) {
+                gameOver();
+            }
+        }
+
+        /* ===================================================================
+           7. MAIN GAME LOOP & STATE CONTROLS
+           =================================================================== */
+
+        function update(time = 0) {
+            if (!gameStarted || isPaused || isGameOver) return;
+
+            const deltaTime = time - lastTime;
+            lastTime = time;
+
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) {
+                softDrop();
+            }
+
+            // Frightened mode timer decrement
+            if (isFrightened) {
+                frightenedTimer--;
+                if (frightenedTimer <= 0) {
+                    isFrightened = false;
+                    frightenedBanner.classList.add('hidden');
+                }
+            }
+
+            drawBoard();
+            requestAnimationFrame(update);
+        }
+
+        function startGame() {
+            grid = createGrid();
+            nextQueue = [];
+            refillNextQueue();
+
+            score = 0;
+            level = 1;
+            linesCleared = 0;
+            totalPelletsEaten = 0;
+            dropInterval = 1000;
+            isGameOver = false;
+            isPaused = false;
+            gameStarted = true;
+            holdPiece = null;
+            canHold = true;
+            isFrightened = false;
+
+            frightenedBanner.classList.add('hidden');
+            overlayScreen.classList.add('hidden');
+
+            audio.init();
+            audio.playStartMelody();
+
+            spawnNextPiece();
+            drawPreview(holdCtx, null);
+
+            updateUI();
+            lastTime = performance.now();
+            requestAnimationFrame(update);
+        }
+
+        function gameOver() {
+            isGameOver = true;
+            gameStarted = false;
+
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('pac_tetris_highscore', highScore.toString());
+            }
+
+            audio.playGameOver();
+
+            overlayTitle.innerText = 'ИГРА ОКОНЧАНА';
+            overlayMessage.innerText = `Ваш счет: ${score} | Линий: ${linesCleared}`;
+            startBtn.innerText = 'ИГРАТЬ СНОВА';
+            overlayScreen.classList.remove('hidden');
+            updateUI();
+        }
+
+        function togglePause() {
+            if (!gameStarted || isGameOver) return;
+
+            isPaused = !isPaused;
+            if (isPaused) {
+                overlayTitle.innerText = 'ПАУЗА';
+                overlayMessage.innerText = 'Игру можно продолжить в любой момент!';
+                startBtn.innerText = 'ПРОДОЛЖИТЬ';
+                overlayScreen.classList.remove('hidden');
+            } else {
+                overlayScreen.classList.add('hidden');
+                lastTime = performance.now();
+                requestAnimationFrame(update);
+            }
+        }
+
+        function updateUI() {
+            scoreText.innerText = score.toString().padStart(6, '0');
+            highScoreText.innerText = highScore.toString().padStart(6, '0');
+            levelText.innerText = level.toString().padStart(2, '0');
+            linesText.innerText = linesCleared.toString();
+            pelletCountText.innerText = `🟡 x${totalPelletsEaten}`;
+        }
+
+        /* ===================================================================
+           8. INPUT CONTROL EVENT LISTENERS
+           =================================================================== */
+
+        // Keyboard Controls
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                e.preventDefault(); // Prevent page scroll
+            }
+
+            if (!gameStarted || isGameOver) return;
+
+            switch (e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                case 'A':
+                    movePlayer(-1);
+                    break;
+
+                case 'ArrowRight':
+                case 'd':
+                case 'D':
+                    movePlayer(1);
+                    break;
+
+                case 'ArrowDown':
+                case 's':
+                case 'S':
+                    softDrop();
+                    break;
+
+                case 'ArrowUp':
+                case 'w':
+                case 'W':
+                case 'x':
+                case 'X':
+                    playerRotate();
+                    break;
+
+                case ' ':
+                    hardDrop();
+                    break;
+
+                case 'c':
+                case 'C':
+                case 'Shift':
+                    holdCurrentPiece();
+                    break;
+
+                case 'p':
+                case 'P':
+                case 'Escape':
+                    togglePause();
+                    break;
+            }
+        });
+
+        // Mobile Button Listeners
+        btnLeft.addEventListener('click', () => movePlayer(-1));
+        btnRight.addEventListener('click', () => movePlayer(1));
+        btnSoftDrop.addEventListener('click', () => softDrop());
+        btnHardDrop.addEventListener('click', () => hardDrop());
+        btnRotate.addEventListener('click', () => playerRotate());
+        btnHold.addEventListener('click', () => holdCurrentPiece());
+
+        // UI Button Listeners
+        startBtn.addEventListener('click', () => {
+            if (isPaused) {
+                togglePause();
+            } else {
+                startGame();
+            }
+        });
+
+        soundToggleBtn.addEventListener('click', () => {
+            audio.init();
+            audio.muted = !audio.muted;
+            soundToggleBtn.innerText = audio.muted ? '🔇 ЗВУК' : '🔊 ЗВУК';
+        });
+
+        helpBtn.addEventListener('click', () => {
+            helpModal.classList.remove('hidden');
+        });
+
+        closeHelpBtn.addEventListener('click', () => {
+            helpModal.classList.add('hidden');
+        });
+
+        // Initial UI Draw
+        updateUI();
+        grid = createGrid();
+        drawBoard();
+    </script>
+</body>
+</html>
